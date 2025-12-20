@@ -166,6 +166,37 @@ void fingerprint_task(void *pvParameters) {
                 xQueueSend(g_ui_queue, &success, 0);
                 xQueueSend(g_audio_queue, &success, 0); // Beep on success
             }
+            
+            // ==========================================
+            // CASE 3: DELETE USER (New)
+            // ==========================================
+            else if (msg.type == MSG_REQ_DELETE_USER) {
+                // Get the ID from the request
+                // In system_state.h we added MSG_REQ_DELETE_USER, generally passing ID via fingerprint.fingerprint_id 
+                // or similar struct. Assuming data.fingerprint.fingerprint_id is used based on your UI logic.
+                uint16_t id_to_delete = msg.data.fingerprint.fingerprint_id;
+                
+                ESP_LOGI(TAG, "Processing Delete Request for ID: %d", id_to_delete);
+                
+                // Call driver to delete
+                esp_err_t ret = fingerprint_delete_model(g_fingerprint_handle, id_to_delete);
+                
+                // Construct result message
+                system_message_t result_msg = {
+                    .type = MSG_DELETE_RESULT,
+                    .data.fingerprint.success = (ret == ESP_OK),
+                    .data.fingerprint.fingerprint_id = id_to_delete
+                };
+                
+                // Send result back to UI Task
+                xQueueSend(g_ui_queue, &result_msg, 0);
+                
+                if (ret == ESP_OK) {
+                    ESP_LOGI(TAG, "Delete Successful");
+                } else {
+                    ESP_LOGE(TAG, "Delete Failed");
+                }
+            }
         }
     }
 }

@@ -21,6 +21,7 @@ static void draw_idle_screen(display_handle_t display) {
     display_draw_text(display, 30, 80, "Press A for FP OR", COLOR_CYAN, COLOR_BLACK);
     display_draw_text(display, 30, 110, "B for keypad", COLOR_CYAN, COLOR_BLACK);
     display_draw_text(display, 30, 140, "Press # for Admin", COLOR_DARKGRAY, COLOR_BLACK);
+    display_draw_text(display, 30, 170, "Press C to Remove", COLOR_DARKGRAY, COLOR_BLACK); // Added Hint
 }
 
 static void draw_scanning_screen(display_handle_t display) {
@@ -57,13 +58,19 @@ static void draw_admin_pin_screen(display_handle_t display, const char *pin_buff
 }
 
 static void draw_register_screen(display_handle_t display, const char *id_buffer) {
-    ESP_LOGI(TAG, "Drawing Register Screen..."); 
     display_clear(display, COLOR_BLUE);
     display_draw_text_large(display, 10, 30, "NEW USER", COLOR_WHITE, COLOR_BLUE);
-    display_draw_text(display, 20, 70, "Enter ID (1-20):", COLOR_WHITE, COLOR_BLUE);
+    display_draw_text(display, 20, 70, "Enter ID (1-200):", COLOR_WHITE, COLOR_BLUE);
     display_draw_text_large(display, 100, 110, id_buffer, COLOR_YELLOW, COLOR_BLUE);
     display_draw_text(display, 40, 140, "Press '#' to Save", COLOR_WHITE, COLOR_BLUE);
-    ESP_LOGI(TAG, "Drawing Complete");
+}
+
+static void draw_remove_user_screen(display_handle_t display, const char *id_buffer) {
+    display_clear(display, COLOR_RED); // Red background for Danger Zone
+    display_draw_text_large(display, 10, 30, "DELETE USER", COLOR_WHITE, COLOR_RED);
+    display_draw_text(display, 20, 70, "Enter ID to Del:", COLOR_WHITE, COLOR_RED);
+    display_draw_text_large(display, 100, 110, id_buffer, COLOR_YELLOW, COLOR_RED);
+    display_draw_text(display, 40, 140, "#=Delete  *=Exit", COLOR_WHITE, COLOR_RED);
 }
 
 static void draw_enroll_step1(display_handle_t display) {
@@ -98,9 +105,7 @@ void ui_task(void *pvParameters) {
     while (1) {
         if (xQueueReceive(g_ui_queue, &msg, pdMS_TO_TICKS(100)) == pdTRUE) {
             
-            // FRAME SKIPPING CHECK
-            // If there are more messages waiting (user typing fast),
-            // skip the expensive drawing functions for intermediate keys.
+            // FRAME SKIPPING: If queue has pending messages, skip drawing to stay responsive
             bool skip_draw = (uxQueueMessagesWaiting(g_ui_queue) > 0);
 
             switch (msg.type) {
@@ -108,7 +113,7 @@ void ui_task(void *pvParameters) {
                 case MSG_KEYPAD_KEY_PRESSED:
                     char key = msg.data.keypad.key;
                     
-                    // 1. IDLE STATE: Press '#' to enter Admin Mode
+                    // 1. IDLE STATE
                     if (g_current_state == STATE_IDLE) {
                         if (key == '#') {
                             ESP_LOGI(TAG, "Entering Admin PIN Mode");
@@ -116,35 +121,34 @@ void ui_task(void *pvParameters) {
                             memset(input_buffer, 0, sizeof(input_buffer));
                             draw_admin_pin_screen(g_display_handle, input_buffer);
                         }
+                        else if (key == 'C') {
+                            ESP_LOGI(TAG, "Entering Delete User Mode");
+                            g_current_state = STATE_REMOVE_USER;
+                            memset(input_buffer, 0, sizeof(input_buffer));
+                            draw_remove_user_screen(g_display_handle, input_buffer);
+                        }
                     }
                     
                     // 2. PIN ENTRY STATE
                     else if (g_current_state == STATE_ADMIN_PIN_ENTRY) {
                         size_t len = strlen(input_buffer);
-                        
                         if (key >= '0' && key <= '9') {
                             if (len < 6) {
                                 input_buffer[len] = key;
                                 input_buffer[len+1] = '\0';
-                                // OPTIMIZATION: Only draw if this is the last key in the buffer
-                                if (!skip_draw) {
-                                    draw_admin_pin_screen(g_display_handle, input_buffer);
-                                }
+                                if (!skip_draw) draw_admin_pin_screen(g_display_handle, input_buffer);
                             }
                         } 
-                        else if (key == '*') { // Cancel / Back
+                        else if (key == '*') { // Cancel
                             g_current_state = STATE_IDLE;
                             draw_idle_screen(g_display_handle);
                         }
-                        else if (key == '#') { // Enter to Verify
-                            ESP_LOGI(TAG, "Verifying PIN: %s", input_buffer);
+                        else if (key == '#') { // Confirm PIN
                             if (strcmp(input_buffer, ADMIN_PIN) == 0) {
-                                ESP_LOGI(TAG, "PIN Correct");
                                 g_current_state = STATE_ADMIN_FINGERPRINT_REGISTER;
                                 memset(input_buffer, 0, sizeof(input_buffer));
                                 draw_register_screen(g_display_handle, input_buffer);
                             } else {
-                                ESP_LOGW(TAG, "PIN Incorrect");
                                 draw_failure_screen(g_display_handle);
                                 vTaskDelay(pdMS_TO_TICKS(1000));
                                 g_current_state = STATE_IDLE;
@@ -153,40 +157,63 @@ void ui_task(void *pvParameters) {
                         }
                     }
                     
-                    // 3. ENTER ID STATE (Register)
+                    // 3. REGISTER USER STATE
                     else if (g_current_state == STATE_ADMIN_FINGERPRINT_REGISTER) {
                          size_t len = strlen(input_buffer);
-                         
                          if (key >= '0' && key <= '9') {
                              if (len < 3) {
                                  input_buffer[len] = key;
                                  input_buffer[len+1] = '\0';
-                                 // OPTIMIZATION: Only draw if queue is empty
-                                 if (!skip_draw) {
-                                    draw_register_screen(g_display_handle, input_buffer);
-                                 }
+                                 if (!skip_draw) draw_register_screen(g_display_handle, input_buffer);
                              }
                          }
-                         else if (key == '#') { // Enter ID to Start Enrollment
+                         else if (key == '#') { // Start Enroll
                              int id = atoi(input_buffer);
                              if (id > 0 && id <= 200) {
-                                 ESP_LOGI(TAG, "Starting Enroll for ID: %d", id);
                                  system_message_t enroll_msg = {
                                      .type = MSG_START_ENROLL,
                                      .data.enroll.enroll_id = (uint16_t)id
                                  };
                                  xQueueSend(g_fingerprint_queue, &enroll_msg, 0);
                              } else {
+                                 // Invalid ID
                                  draw_failure_screen(g_display_handle);
                                  vTaskDelay(pdMS_TO_TICKS(1000));
                                  memset(input_buffer, 0, sizeof(input_buffer));
                                  draw_register_screen(g_display_handle, input_buffer);
                              }
                          }
-                         else if (key == '*') { // Cancel
+                         else if (key == '*') {
                              g_current_state = STATE_IDLE;
                              draw_idle_screen(g_display_handle);
                          }
+                    }
+
+                    // 4. REMOVE USER STATE (New)
+                    else if (g_current_state == STATE_REMOVE_USER) {
+                        size_t len = strlen(input_buffer);
+                        if (key >= '0' && key <= '9') {
+                            if (len < 3) {
+                                input_buffer[len] = key;
+                                input_buffer[len+1] = '\0';
+                                if (!skip_draw) draw_remove_user_screen(g_display_handle, input_buffer);
+                            }
+                        }
+                        else if (key == '*') {
+                            g_current_state = STATE_IDLE;
+                            draw_idle_screen(g_display_handle);
+                        }
+                        else if (key == '#') {
+                            int id = atoi(input_buffer);
+                            if (id > 0) {
+                                display_draw_text(g_display_handle, 20, 140, "Deleting...", COLOR_WHITE, COLOR_RED);
+                                system_message_t del_msg = {
+                                    .type = MSG_REQ_DELETE_USER,
+                                    .data.fingerprint.fingerprint_id = (uint16_t)id
+                                };
+                                xQueueSend(g_fingerprint_queue, &del_msg, 0);
+                            }
+                        }
                     }
                     break;
 
@@ -199,6 +226,7 @@ void ui_task(void *pvParameters) {
                      else if (g_current_state == STATE_OUT_OF_SERVICE) draw_out_of_service_screen(g_display_handle);
                      break;
 
+                // --- ENROLLMENT & DELETION STATUS ---
                 case MSG_ENROLL_STEP_1:
                     draw_enroll_step1(g_display_handle);
                     break;
@@ -213,6 +241,19 @@ void ui_task(void *pvParameters) {
                     break;
                 case MSG_ENROLL_FAIL:
                     draw_failure_screen(g_display_handle);
+                    vTaskDelay(pdMS_TO_TICKS(2000));
+                    g_current_state = STATE_IDLE;
+                    draw_idle_screen(g_display_handle);
+                    break;
+                
+                case MSG_DELETE_RESULT:
+                    if (msg.data.fingerprint.success) {
+                        display_clear(g_display_handle, COLOR_GREEN);
+                        display_draw_text_large(g_display_handle, 30, 60, "DELETED!", COLOR_WHITE, COLOR_GREEN);
+                    } else {
+                        display_clear(g_display_handle, COLOR_RED);
+                        display_draw_text_large(g_display_handle, 30, 60, "ERR/EMPTY", COLOR_WHITE, COLOR_RED);
+                    }
                     vTaskDelay(pdMS_TO_TICKS(2000));
                     g_current_state = STATE_IDLE;
                     draw_idle_screen(g_display_handle);

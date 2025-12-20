@@ -4,6 +4,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/queue.h"
+#include <stdbool.h>
+#include <stdint.h>
 
 // Event Group Bits
 #define EVENT_WIFI_CONNECTED        (1 << 0)
@@ -22,6 +24,7 @@ typedef enum {
     STATE_FAILURE,
     STATE_ADMIN_PIN_ENTRY,
     STATE_ADMIN_FINGERPRINT_REGISTER,
+    STATE_REMOVE_USER,              // <--- ADDED: State for deleting users
     STATE_OUT_OF_SERVICE
 } system_state_t;
 
@@ -48,12 +51,16 @@ typedef enum {
     MSG_WIFI_STATUS,
     MSG_NTP_STATUS,
     
-    // Admin / Enrollment Flow (NEW)
+    // Admin / Enrollment Flow
     MSG_START_ENROLL,       // Tell FP task to start registering
     MSG_ENROLL_STEP_1,      // UI: Place finger 1st time
     MSG_ENROLL_STEP_2,      // UI: Place finger 2nd time
     MSG_ENROLL_SUCCESS,     // Registration success
-    MSG_ENROLL_FAIL         // Registration failed
+    MSG_ENROLL_FAIL,        // Registration failed
+
+    // Remove User Flow
+    MSG_REQ_DELETE_USER,    // <--- ADDED: Request to delete ID
+    MSG_DELETE_RESULT       // <--- ADDED: Result of delete operation
 } message_type_t;
 
 // Message Structures
@@ -62,6 +69,8 @@ typedef struct {
     union {
         struct {
             uint16_t fingerprint_id;
+            bool success;           // <--- ADDED: To report success/fail of Delete or Match
+            uint16_t score;         // Optional: Useful for matching confidence
         } fingerprint;
         
         struct {
@@ -85,7 +94,6 @@ typedef struct {
             bool synced;
         } ntp;
 
-        // New structure for enrollment data
         struct {
             uint16_t enroll_id;
         } enroll;

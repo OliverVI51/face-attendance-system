@@ -100,4 +100,10 @@ esp_err_t fingerprint_delete_model(fingerprint_handle_t handle, uint16_t locatio
  */
 esp_err_t fingerprint_empty_database(fingerprint_handle_t handle);
 
+/**
+ * @brief Self-test: Checks if sensor is connected and communicating
+ * @return ESP_OK on success, ESP_FAIL otherwise
+ */
+esp_err_t fingerprint_self_test(fingerprint_handle_t handle);
+
 #endif // FINGERPRINT_DRIVER_H

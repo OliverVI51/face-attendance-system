@@ -32,17 +32,28 @@ typedef enum {
     MSG_FINGERPRINT_NOT_MATCHED,
     MSG_FINGERPRINT_TIMEOUT,
     MSG_FINGERPRINT_ERROR,
+    
+    // Keypad & Button
     MSG_KEYPAD_KEY_PRESSED,
     MSG_BUTTON_PRESSED,
-    MSG_PLAY_AUDIO,
+    
+    // UI Updates
     MSG_DISPLAY_UPDATE,
+    MSG_PLAY_AUDIO,
+    
+    // Network & Time
     MSG_HTTP_POST,
     MSG_HTTP_SUCCESS,
     MSG_HTTP_FAILURE,
     MSG_WIFI_STATUS,
     MSG_NTP_STATUS,
-    MSG_ADMIN_PIN_CORRECT,
-    MSG_ADMIN_PIN_INCORRECT
+    
+    // Admin / Enrollment Flow (NEW)
+    MSG_START_ENROLL,       // Tell FP task to start registering
+    MSG_ENROLL_STEP_1,      // UI: Place finger 1st time
+    MSG_ENROLL_STEP_2,      // UI: Place finger 2nd time
+    MSG_ENROLL_SUCCESS,     // Registration success
+    MSG_ENROLL_FAIL         // Registration failed
 } message_type_t;
 
 // Message Structures
@@ -52,22 +63,33 @@ typedef struct {
         struct {
             uint16_t fingerprint_id;
         } fingerprint;
+        
         struct {
             char key;
         } keypad;
+        
         struct {
             uint8_t track_number;
         } audio;
+        
         struct {
             uint16_t fingerprint_id;
             char timestamp[32];
         } http;
+        
         struct {
             bool connected;
         } wifi;
+        
         struct {
             bool synced;
         } ntp;
+
+        // New structure for enrollment data
+        struct {
+            uint16_t enroll_id;
+        } enroll;
+
     } data;
 } system_message_t;
 
@@ -82,6 +104,6 @@ extern QueueHandle_t g_network_queue;
 extern EventGroupHandle_t g_system_events;
 
 // Current System State (declared in main.c)
-extern system_state_t g_current_state;
+extern volatile system_state_t g_current_state;
 
 #endif // SYSTEM_STATE_H

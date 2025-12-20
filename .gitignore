@@ -1,0 +1,40 @@
+# --- ESP-IDF Build System ---
+/build/
+**/build/
+sdkconfig
+sdkconfig.old
+*.bin
+*.elf
+*.map
+*.hex
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.venv/
+
+# --- IDEs and OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# --- Managed Components ---
+# We usually ignore the downloaded component code, 
+# but KEEP idf_component.yml and dependencies.lock
+**/managed_components/
+
+# --- Specific Project Files to Ignore ---
+# Temporary audio generation files (Keep the final MP3s, ignore temps)
+*.wav
+temp_*.mp3
+
+# --- Exceptions (Things we DO want to keep) ---
+!**/sdkconfig.defaults
+!partitions.csv
+!**/data/**/*.bin
+!S3_Main_Controller/sd_card_assets/
+!**/requirements.txt

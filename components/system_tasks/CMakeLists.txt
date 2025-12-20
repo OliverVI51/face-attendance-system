@@ -15,4 +15,5 @@ idf_component_register(
         network_manager
         time_manager
         freertos
+        main
 )

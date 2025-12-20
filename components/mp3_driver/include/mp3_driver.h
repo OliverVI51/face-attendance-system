@@ -58,4 +58,11 @@ esp_err_t mp3_set_volume(mp3_handle_t handle, uint8_t volume);
  */
 esp_err_t mp3_reset(mp3_handle_t handle);
 
+/**
+ * @brief Query the total number of files on the SD card
+ * @param count Pointer to store the file count
+ * @return ESP_OK if communication successful
+ */
+esp_err_t mp3_get_file_count(mp3_handle_t handle, uint16_t *count);
+
 #endif // MP3_DRIVER_H

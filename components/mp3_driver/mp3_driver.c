@@ -121,3 +121,34 @@ esp_err_t mp3_reset(mp3_handle_t handle) {
     vTaskDelay(pdMS_TO_TICKS(500));
     return ret;
 }
+
+// Add to components/mp3_driver/mp3_driver.c
+
+esp_err_t mp3_get_file_count(mp3_handle_t handle, uint16_t *count) {
+    // Access internal UART num
+    struct mp3_driver { int uart_num; /*...*/ }; 
+    struct mp3_driver *dev = (struct mp3_driver *)handle;
+
+    // Flush buffer
+    uart_flush_input(dev->uart_num);
+
+    // Command: 0x48 (Query TF Card file count)
+    // Format: $S VER Len CMD Feedback Para1 Para2 Checksum $O
+    // Hex: 7E FF 06 48 00 00 00 FE B3 EF
+    const uint8_t cmd[] = {
+        0x7E, 0xFF, 0x06, 0x48, 0x00, 0x00, 0x00, 0xFE, 0xB3, 0xEF
+    };
+
+    uart_write_bytes(dev->uart_num, (const char*)cmd, sizeof(cmd));
+
+    // Response Format: 7E FF 06 48 00 [DataH] [DataL] [CheckH] [CheckL] EF
+    uint8_t buf[10];
+    int len = uart_read_bytes(dev->uart_num, buf, 10, pdMS_TO_TICKS(500));
+
+    if (len == 10 && buf[0] == 0x7E && buf[3] == 0x48) {
+        *count = (buf[5] << 8) | buf[6];
+        return ESP_OK;
+    }
+
+    return ESP_ERR_TIMEOUT;
+}

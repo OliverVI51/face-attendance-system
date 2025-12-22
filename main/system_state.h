@@ -24,11 +24,18 @@ typedef enum {
     STATE_FAILURE,
     STATE_ADMIN_PIN_ENTRY,
     STATE_ADMIN_FINGERPRINT_REGISTER,
-    STATE_REMOVE_USER,              // <--- ADDED: State for deleting users
+    STATE_REMOVE_USER,
+    STATE_MANUAL_ATTENDANCE,
     STATE_OUT_OF_SERVICE
 } system_state_t;
 
-// Message Types for Queues
+// Login Method Enum (NEW)
+typedef enum {
+    LOGIN_METHOD_FINGERPRINT,
+    LOGIN_METHOD_KEYPAD
+} login_method_t;
+
+// Message Types
 typedef enum {
     MSG_FINGERPRINT_DETECTED,
     MSG_FINGERPRINT_MATCHED,
@@ -52,15 +59,15 @@ typedef enum {
     MSG_NTP_STATUS,
     
     // Admin / Enrollment Flow
-    MSG_START_ENROLL,       // Tell FP task to start registering
-    MSG_ENROLL_STEP_1,      // UI: Place finger 1st time
-    MSG_ENROLL_STEP_2,      // UI: Place finger 2nd time
-    MSG_ENROLL_SUCCESS,     // Registration success
-    MSG_ENROLL_FAIL,        // Registration failed
+    MSG_START_ENROLL,
+    MSG_ENROLL_STEP_1,
+    MSG_ENROLL_STEP_2,
+    MSG_ENROLL_SUCCESS,
+    MSG_ENROLL_FAIL,
 
     // Remove User Flow
-    MSG_REQ_DELETE_USER,    // <--- ADDED: Request to delete ID
-    MSG_DELETE_RESULT       // <--- ADDED: Result of delete operation
+    MSG_REQ_DELETE_USER,
+    MSG_DELETE_RESULT
 } message_type_t;
 
 // Message Structures
@@ -69,8 +76,9 @@ typedef struct {
     union {
         struct {
             uint16_t fingerprint_id;
-            bool success;           // <--- ADDED: To report success/fail of Delete or Match
-            uint16_t score;         // Optional: Useful for matching confidence
+            bool success;
+            uint16_t score;
+            login_method_t method;  // <--- NEW FIELD
         } fingerprint;
         
         struct {
@@ -101,17 +109,12 @@ typedef struct {
     } data;
 } system_message_t;
 
-// Global Queue Handles (declared in main.c)
 extern QueueHandle_t g_ui_queue;
 extern QueueHandle_t g_fingerprint_queue;
 extern QueueHandle_t g_keypad_queue;
 extern QueueHandle_t g_audio_queue;
 extern QueueHandle_t g_network_queue;
-
-// Global Event Group (declared in main.c)
 extern EventGroupHandle_t g_system_events;
-
-// Current System State (declared in main.c)
 extern volatile system_state_t g_current_state;
 
 #endif // SYSTEM_STATE_H

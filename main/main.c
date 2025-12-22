@@ -11,7 +11,7 @@
 #include "driver/spi_common.h"
 
 #include "app_config.h"
-#include "system_state.h" // Handles extern volatile declaration
+#include "system_state.h"
 #include "fingerprint_driver.h"
 #include "mp3_driver.h"
 #include "display_driver.h"
@@ -56,10 +56,10 @@ static void keypad_callback(char key, void *user_data) {
         .type = MSG_KEYPAD_KEY_PRESSED,
         .data.keypad.key = key
     };
-    // If the queue is full (because audio task isn't running to consume), 
-    // this will just drop the message safely (wait time 0).
+    // Non-blocking send
     xQueueSend(g_keypad_queue, &key_msg, 0);
 
+    // Shortcut: Trigger Fingerprint Scan directly on 'A'
     if (key == 'A') {
         system_message_t fp_msg = { .type = MSG_BUTTON_PRESSED };
         xQueueSend(g_fingerprint_queue, &fp_msg, 0);
@@ -91,7 +91,7 @@ void app_main(void) {
     }
     ESP_ERROR_CHECK(ret);
     
-    // 2. Create Objects
+    // 2. Create Synchronization Objects
     g_ui_queue = xQueueCreate(10, sizeof(system_message_t));
     g_fingerprint_queue = xQueueCreate(5, sizeof(system_message_t));
     g_keypad_queue = xQueueCreate(20, sizeof(system_message_t));
@@ -99,7 +99,7 @@ void app_main(void) {
     g_network_queue = xQueueCreate(10, sizeof(system_message_t));
     g_system_events = xEventGroupCreate();
     
-    // 3. Initialize Display
+    // 3. Initialize Display (First, so we can see errors)
     display_config_t display_config = {
         .mosi_pin = LCD_MOSI_PIN, .sclk_pin = LCD_SCLK_PIN, .cs_pin = LCD_CS_PIN,
         .dc_pin = LCD_DC_PIN, .rst_pin = LCD_RST_PIN, .bl_pin = LCD_BL_PIN,
@@ -113,12 +113,12 @@ void app_main(void) {
 
     bool hardware_failed = false;
     int current_y = UI_START_Y + UI_LINE_HEIGHT;
-    char status_buf[32];
 
     // 4. Network Check
     display_draw_text(g_display_handle, 10, current_y, "Network:", COLOR_WHITE, COLOR_BLACK);
     network_manager_register_callback(network_event_callback, NULL);
     ret = network_manager_init(WIFI_SSID, WIFI_PASSWORD);
+    
     if (ret == ESP_OK && network_hardware_check() == ESP_OK) {
         display_draw_text(g_display_handle, 120, current_y, "[OK]", COLOR_GREEN, COLOR_BLACK);
     } else {
@@ -135,6 +135,7 @@ void app_main(void) {
         .baud_rate = FINGERPRINT_BAUD, .address = 0xFFFFFFFF
     };
     ESP_ERROR_CHECK(fingerprint_init(&fp_config, &g_fingerprint_handle));
+
     if (fingerprint_self_test(g_fingerprint_handle) == ESP_OK) {
         display_draw_text(g_display_handle, 120, current_y, "[OK]", COLOR_GREEN, COLOR_BLACK);
     } else {
@@ -144,8 +145,8 @@ void app_main(void) {
     }
     current_y += UI_LINE_HEIGHT;
 
-    // 6. MP3 DFPlayer Check (NON-BLOCKING ON FAIL)
-    ESP_LOGI(TAG, "--- STARTING MP3 DIAGNOSIS ---");
+    // 6. MP3 DFPlayer Check (Robust & Non-Blocking)
+    ESP_LOGI(TAG, "--- MP3 DIAGNOSIS ---");
     display_draw_text(g_display_handle, 10, current_y, "Audio Files:", COLOR_WHITE, COLOR_BLACK);
 
     mp3_config_t mp3_config = {
@@ -154,7 +155,7 @@ void app_main(void) {
     };
     ESP_ERROR_CHECK(mp3_init(&mp3_config, &g_mp3_handle));
 
-    // Wait slightly for power up
+    // Wait for module to wake up
     vTaskDelay(pdMS_TO_TICKS(1000)); 
 
     bool mp3_ok = false;
@@ -169,7 +170,7 @@ void app_main(void) {
                 mp3_ok = true;
                 break;
             } else {
-                 ESP_LOGW(TAG, "Attempt %d: Found %d files (Need %d)", i, file_count, BOOT_CHECK_MP3_COUNT);
+                 ESP_LOGW(TAG, "MP3: Found %d files (Need %d)", file_count, BOOT_CHECK_MP3_COUNT);
             }
         }
         vTaskDelay(pdMS_TO_TICKS(500));
@@ -178,10 +179,9 @@ void app_main(void) {
     if (mp3_ok) {
         display_draw_text(g_display_handle, 120, current_y, "[OK]   ", COLOR_GREEN, COLOR_BLACK);
     } else {
-        // --- CHANGED: WARNING ONLY, DO NOT HALT ---
+        // Warning only, do not halt
         display_draw_text(g_display_handle, 120, current_y, "[N/A]  ", COLOR_ORANGE, COLOR_BLACK);
-        ESP_LOGW(TAG, "Audio Check Failed. System will proceed without sound.");
-        // hardware_failed = true;  <-- REMOVED THIS LINE
+        ESP_LOGW(TAG, "Audio Check Failed. Proceeding without sound.");
     }
     current_y += UI_LINE_HEIGHT;
 
@@ -215,15 +215,13 @@ void app_main(void) {
     xTaskCreatePinnedToCore(fingerprint_task, "fingerprint_task", STACK_SIZE_FINGERPRINT_TASK, NULL, PRIORITY_FINGERPRINT_TASK, NULL, 0);
     xTaskCreatePinnedToCore(keypad_task, "keypad_task", STACK_SIZE_KEYPAD_TASK, NULL, PRIORITY_KEYPAD_TASK, NULL, 1);
     
-    // --- CHANGED: Only start audio task if hardware is OK ---
+    // Only start audio task if hardware is OK
     if (mp3_ok) {
         xTaskCreatePinnedToCore(audio_task, "audio_task", STACK_SIZE_AUDIO_TASK, NULL, PRIORITY_AUDIO_TASK, NULL, 1);
-    } else {
-        ESP_LOGW(TAG, "Audio task skipped due to hardware missing.");
     }
     
     xTaskCreatePinnedToCore(network_task, "network_task", STACK_SIZE_NETWORK_TASK, NULL, PRIORITY_NETWORK_TASK, NULL, 1);
     xTaskCreatePinnedToCore(time_sync_task, "time_sync_task", STACK_SIZE_TIME_SYNC_TASK, NULL, PRIORITY_TIME_SYNC_TASK, NULL, 1);
     
-    ESP_LOGI(TAG, "Boot Complete.");
+    ESP_LOGI(TAG, "System initialization complete.");
 }

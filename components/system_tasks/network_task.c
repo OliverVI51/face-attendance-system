@@ -94,7 +94,6 @@ void network_task(void *pvParameters) {
             ESP_LOGI(TAG, "HTTP POST successful");
             success = true;
 
-            system_message_t http_success_msg = {.type = MSG_HTTP_SUCCESS};
             // Can notify other tasks if needed
           } else {
             ESP_LOGE(TAG, "HTTP POST failed, retry %d/%d", retry + 1,
@@ -106,7 +105,6 @@ void network_task(void *pvParameters) {
 
         if (!success) {
           ESP_LOGE(TAG, "HTTP POST failed after all retries");
-          system_message_t http_fail_msg = {.type = MSG_HTTP_FAILURE};
           // Can cache for later retry if needed
         }
       }
